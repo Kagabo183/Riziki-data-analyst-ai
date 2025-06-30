@@ -41,11 +41,14 @@ def format_datetime(value, format='%b %d, %H:%M'):
     return value
 
 def init_conversations():
+    """Initialize conversation data structure in session if missing."""
     if 'conversations' not in session:
         session['conversations'] = {'current': None, 'list': []}
-        logger.debug("Initialized conversations")
+        session.modified = True
+        logger.debug("Initialized conversations in session")
 
 def create_new_conversation():
+    """Create a new conversation object and add to session."""
     conv_id = str(uuid.uuid4())
     new_conv = {
         'id': conv_id,
@@ -57,11 +60,13 @@ def create_new_conversation():
             'is_file': False
         }],
         'created_at': datetime.now().isoformat(),
-        'file_info': None
+        'file_info': None,
+        'language': 'en'  # Default language English
     }
     session['conversations']['list'].append(new_conv)
     session['conversations']['current'] = conv_id
     session.modified = True
+    logger.debug(f"Created new conversation with id {conv_id}")
     return new_conv
 
 @app.route('/')
@@ -74,13 +79,15 @@ def index():
             session['conversations']['current'] = conv_id
             session.modified = True
         else:
-            # If not found, optionally create new or ignore
-            pass
+            logger.warning(f"Conversation id {conv_id} not found in session.")
+            # Optionally create a new conversation or ignore
     if not session['conversations']['list']:
         create_new_conversation()
-    return render_template('index.html',
-                           conversations=session['conversations']['list'],
-                           current_conversation=session['conversations']['current'])
+    return render_template(
+        'index.html',
+        conversations=session['conversations']['list'],
+        current_conversation=session['conversations']['current']
+    )
 
 @app.route('/new_chat', methods=['POST'])
 def new_chat():
@@ -92,7 +99,7 @@ def new_chat():
 def chat():
     try:
         data = request.get_json()
-        user_message = data.get('message')
+        user_message = data.get('message', '').strip()
         conv_id = data.get('conversation_id')
 
         if not user_message:
@@ -102,6 +109,30 @@ def chat():
         if not conversation:
             return jsonify({'error': 'Conversation not found'}), 404
 
+        # Initialize language if not set
+        if 'language' not in conversation:
+            conversation['language'] = 'en'
+
+        user_message_lower = user_message.lower()
+
+        # Detect explicit language switch requests
+        kinyarwanda_triggers = [
+            'use kinyarwanda', 'respond in kinyarwanda', 'please reply in kinyarwanda',
+            'andika mu kinyarwanda', 'soma mu kinyarwanda', 'fasha mu kinyarwanda'
+        ]
+        english_triggers = [
+            'switch to english', 'respond in english', 'please reply in english',
+            'andika mu cyongereza', 'soma mu cyongereza'
+        ]
+
+        if any(phrase in user_message_lower for phrase in kinyarwanda_triggers):
+            conversation['language'] = 'rw'
+            logger.debug("Language switched to Kinyarwanda")
+        elif any(phrase in user_message_lower for phrase in english_triggers):
+            conversation['language'] = 'en'
+            logger.debug("Language switched to English")
+
+        # Append user message
         conversation['messages'].append({
             'sender': 'user',
             'content': user_message,
@@ -109,13 +140,9 @@ def chat():
             'is_file': False
         })
 
-        # Basic language detection: if message contains Kinyarwanda words, respond in Kinyarwanda
-        kinyarwanda_words = ['muraho', 'amakuru', 'nta', 'ndi', 'ni', 'cyangwa', 'soma', 'fasha']
-        is_kinyarwanda = any(word in user_message.lower() for word in kinyarwanda_words)
-
+        # Generate AI response
         if gemini_model:
-            prompt = ""
-            if is_kinyarwanda:
+            if conversation['language'] == 'rw':
                 prompt = (
                     "Nyamuneka usubize mu Kinyarwanda kandi ukoreshe imiterere ya ChatGPT, "
                     "ugire code formatted neza, amafoto meza, n'amatebule ashobora gukopororwa. "
@@ -128,10 +155,11 @@ def chat():
                     f"User: {user_message}\nAssistant:"
                 )
             response = gemini_model.generate_content(prompt)
-            ai_response = response.text if hasattr(response, 'text') else "⚠️ Could not generate a valid response."
+            ai_response = getattr(response, 'text', "⚠️ Could not generate a valid response.")
         else:
             ai_response = f"Echo: {user_message}"
 
+        # Append AI response
         conversation['messages'].append({
             'sender': 'ai',
             'content': ai_response,
@@ -139,6 +167,7 @@ def chat():
             'is_file': False
         })
 
+        # Update conversation title if only default AI greeting and one user message exist
         if len(conversation['messages']) == 3:
             conversation['title'] = user_message[:20] + ("..." if len(user_message) > 20 else "")
 
@@ -157,7 +186,7 @@ def upload_file():
     file = request.files['file']
     conv_id = request.form.get('conversation_id')
 
-    if file.filename == '':
+    if not file or file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
 
     conversation = next((c for c in session['conversations']['list'] if c['id'] == conv_id), None)
@@ -165,7 +194,9 @@ def upload_file():
         return jsonify({'error': 'Conversation not found'}), 404
 
     try:
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+        # Avoid overwriting files by prefixing with UUID
+        unique_filename = f"{uuid.uuid4().hex}_{file.filename}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         file.save(filepath)
 
         conversation['file_info'] = {
@@ -181,6 +212,7 @@ def upload_file():
             'is_file': True
         })
 
+        # Try reading the file as CSV or Excel to analyze
         df = pd.DataFrame()
         try:
             if filepath.endswith('.csv'):
@@ -210,5 +242,5 @@ def upload_file():
         logger.error(f"Upload error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5001, debug=True)
