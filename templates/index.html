@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Riziki Data Analysis Assistant</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+/>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<style>
+  /* Interface smaller font */
+  body, html {
+    font-size: 12px !important;
+    height: 100%;
+    margin: 0;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue",
+      sans-serif;
+    background-color: #f9fafb;
+  }
+
+  /* Sidebar scrollbar */
+  .sidebar {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f9fafb;
+  }
+  .sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .sidebar::-webkit-scrollbar-track {
+    background: #f9fafb;
+  }
+  .sidebar::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 3px;
+  }
+
+  /* Messages scrollbar */
+  #messagesContainer {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #fff;
+  }
+  #messagesContainer::-webkit-scrollbar {
+    width: 8px;
+  }
+  #messagesContainer::-webkit-scrollbar-track {
+    background: #fff;
+  }
+  #messagesContainer::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 4px;
+  }
+
+  /* Chat bubbles bigger font, all aligned left, stacked vertically */
+  .message-user,
+  .message-ai {
+    max-width: 700px; /* max bubble width */
+    word-break: break-word; /* break long words */
+    white-space: pre-wrap; /* preserve spacing but wrap */
+    margin: 0.5rem 0; /* vertical spacing only */
+    padding: 12px 18px;
+    font-size: 14px !important;
+    line-height: 1.5;
+    border-radius: 18px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    background-color: rgb(244, 244, 244); /* light gray background */
+    color: #111827;
+    /* Align left by default, no margin auto */
+  }
+
+  /* User message styling */
+  .message-user {
+    background-color: #f1f6fe; /* blue */
+    color: rgb(7, 7, 7);
+    box-shadow: 0 1px 4px rgba(251, 251, 252, 0.6);
+    border-radius: 18px 18px 4px 18px;
+  }
+
+.message-ai {
+  background-color: #ffffff !important; /* white background */
+  color: #111827;
+  border-radius: 0 !important; /* no rounded corners */
+  font-size: 15px !important;
+  line-height: 1.6;
+  box-shadow: none; /* remove shadow if you want */
+}
+
+  /* Loading indicator dots */
+  #loadingIndicator > div > div > div {
+    background-color: #94a3b8;
+  }
+
+  /* Responsive textarea */
+  textarea {
+    resize: none;
+    font-size: 14px !important;
+  }
+
+  /* Markdown styling inside AI messages */
+  .message-ai ul,
+  .message-ai ol {
+    padding-left: 1.25rem;
+    margin-top: 0.25rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .message-ai ul li {
+    list-style-type: disc;
+    margin-bottom: 0.25rem;
+  }
+
+  .message-ai ol li {
+    list-style-type: decimal;
+    margin-bottom: 0.25rem;
+  }
+
+.message-ai pre {
+  background-color: #f2f9fb;
+  color: #343541;
+  border: 1px solid #e0e0e0;
+  padding: 0.9rem 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.95em;
+  line-height: 1.9;
+  margin: 0.75rem 0;
+  max-height: 180px;
+  position: relative;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word; /* Add this */
+  box-shadow: none;
+}
+
+
+  .message-ai pre.collapsed {
+    max-height: 80px;
+    overflow-y: hidden;
+  }
+
+  .show-full-btn {
+    position: absolute;
+    bottom: 8px;
+    right: 12px;
+    background: rgba(0, 0, 0, 0.05);
+    border: none;
+    color: #343541;
+    cursor: pointer;
+    font-size: 0.75em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+  }
+
+  .show-full-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  .message-ai code {
+    background-color: #ececf1;
+    color: #343541;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.92em;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .message-ai a {
+    color: #93c5fd;
+    text-decoration: underline;
+    transition: color 0.2s ease;
+  }
+
+  .message-ai a:hover {
+    color: #60a5fa;
+  }
+
+  /* Table styling for easy copy-paste */
+  .message-ai table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5rem 0;
+    font-size: 14px;
+  }
+  .message-ai th, .message-ai td {
+    border: 1px solid #ddd;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+  }
+  .message-ai th {
+    background-color: #e0e0e0;
+    font-weight: 600;
+  }
+
+  /* Smaller sidebar & button fonts */
+  .sidebar .conversation-item,
+  #newChatBtn,
+  footer span,
+  footer i,
+  header h1 {
+    font-size: 12px !important;
+  }
+
+  /* Ensure main AI message content wraps naturally */
+  .ai-message-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style>
+</head>
+<body class="flex h-screen">
+
+  <aside
+    class="w-64 bg-white border-r border-gray-200 flex flex-col h-full"
+    role="complementary"
+  >
+    <div class="p-4 border-b border-gray-200">
+      <button
+        id="newChatBtn"
+        class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+        aria-label="Start New Chat"
+      >
+        <i class="fas fa-plus"></i> New Chat
+      </button>
+    </div>
+    <nav
+      class="sidebar flex-1 overflow-y-auto p-2"
+      aria-label="Conversation List"
+    >
+      {% for conv in conversations %}
+      <div
+        class="conversation-item {% if conv.id == current_conversation %}bg-gray-100{% endif %} p-2 rounded-lg cursor-pointer hover:bg-gray-100 mb-1"
+        data-conv-id="{{ conv.id }}"
+        tabindex="0"
+        role="button"
+        aria-pressed="{% if conv.id == current_conversation %}true{% else %}false{% endif %}"
+      >
+        <div class="flex items-center gap-2">
+          <i class="fas fa-comment text-gray-500"></i>
+          <span class="truncate font-medium text-gray-800">{{ conv.title }}</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-1">
+          {{ conv.created_at|datetimeformat }}
+        </div>
+      </div>
+      {% endfor %}
+    </nav>
+    <footer class="p-4 border-t border-gray-200 text-gray-700 flex items-center gap-2">
+      <i class="fas fa-user-circle text-xl"></i>
+      <span>User Account</span>
+    </footer>
+  </aside>
+
+  <main class="flex-1 flex flex-col h-full" role="main" aria-live="polite">
+    <header
+      class="bg-white border-b border-gray-200 p-4 flex items-center justify-between"
+    >
+      <h1 class="text-lg font-semibold select-none">Riziki Data Assistant Ai</h1>
+    </header>
+
+    <section
+      id="messagesContainer"
+      class="flex-1 overflow-y-auto p-4 space-y-4 bg-white"
+      aria-label="Chat messages"
+    >
+      {% for conv in conversations if conv.id == current_conversation %}
+        {% for msg in conv.messages %}
+        <div
+          class="flex justify-start"
+          role="listitem"
+        >
+          <article
+            class="max-w-3xl p-4
+            {% if msg.sender == 'user' %}message-user{% else %}message-ai{% endif %}"
+            aria-live="off"
+            data-msg-id="{{ loop.index }}"
+          >
+            {% if msg.is_file %}
+            <div class="flex items-center gap-2 text-sm text-blue-600">
+              <i class="fas fa-file"></i>
+              <span>{{ msg.content }}</span>
+            </div>
+            {% else %}
+            <div class="ai-message-content"></div>
+            {% endif %}
+            <div class="text-xs text-gray-500 mt-1">{{ msg.timestamp }}</div>
+          </article>
+        </div>
+        {% endfor %}
+      {% endfor %}
+      <div
+        id="loadingIndicator"
+        class="flex justify-start"
+        aria-hidden="true"
+        style="display:none"
+      >
+        <div class="max-w-3xl message-ai p-4">
+          <div class="flex space-x-2">
+            <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+            <div
+              class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+              style="animation-delay: 0.2s"
+            ></div>
+            <div
+              class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+              style="animation-delay: 0.4s"
+            ></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <form
+      id="inputForm"
+      class="bg-white border-t border-gray-200 p-4 flex items-center gap-2"
+      onsubmit="return false;"
+    >
+      <label
+        for="fileInput"
+        class="cursor-pointer p-2 text-gray-500 hover:text-gray-700"
+        aria-label="Attach file"
+      >
+        <i class="fas fa-paperclip"></i>
+        <input
+          type="file"
+          id="fileInput"
+          class="hidden"
+          accept=".csv,.xlsx,.xls"
+          aria-describedby="fileHelp"
+        />
+      </label>
+      <textarea
+        id="messageInput"
+        rows="1"
+        class="flex-1 border border-gray-300 rounded-lg py-2 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+        placeholder="Andika ubutumwa bwawe..."
+        aria-label="Message input"
+      ></textarea>
+      <button
+        id="sendBtn"
+        class="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+        aria-label="Send message"
+      >
+        <i class="fas fa-paper-plane"></i>
+      </button>
+    </form>
+  </main>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const messageInput = document.getElementById("messageInput");
+      const sendBtn = document.getElementById("sendBtn");
+      const messagesContainer = document.getElementById("messagesContainer");
+      const loadingIndicator = document.getElementById("loadingIndicator");
+      const fileInput = document.getElementById("fileInput");
+      const newChatBtn = document.getElementById("newChatBtn");
+
+      // Resize textarea automatically
+      messageInput.addEventListener("input", function () {
+        this.style.height = "auto";
+        this.style.height = this.scrollHeight + "px";
+      });
+
+      // Send message on Enter without Shift
+      messageInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      sendBtn.addEventListener("click", sendMessage);
+
+      fileInput.addEventListener("change", function () {
+        if (this.files.length > 0) {
+          uploadFile(this.files[0]);
+        }
+      });
+
+      newChatBtn.addEventListener("click", function () {
+        fetch("/new_chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }).then(async (response) => {
+          if (response.ok) {
+            const data = await response.json();
+            if(data.success && data.conversation && data.conversation.id){
+              // Redirect to new conversation page
+              window.location.href = `/?conversation=${data.conversation.id}`;
+            } else {
+              window.location.reload();
+            }
+          }
+        });
+      });
+
+      document.querySelectorAll(".conversation-item").forEach((item) => {
+        item.addEventListener("click", function () {
+          const convId = this.getAttribute("data-conv-id");
+          window.location.href = `/?conversation=${convId}`;
+        });
+      });
+
+      // Add message to UI
+      function addMessage(sender, content, isFile = false) {
+        const now = new Date();
+        const timestamp =
+          now.getHours().toString().padStart(2, "0") +
+          ":" +
+          now.getMinutes().toString().padStart(2, "0");
+
+        const container = document.createElement("div");
+        // Changed here: always justify-start for left align
+        container.className = "flex justify-start";
+
+        const article = document.createElement("article");
+        article.className = `max-w-3xl p-4 ${
+          sender === "user" ? "message-user" : "message-ai"
+        }`;
+        article.setAttribute("aria-live", "off");
+
+        if (isFile) {
+          article.innerHTML = `
+            <div class="flex items-center gap-2 text-sm text-blue-600">
+              <i class="fas fa-file"></i>
+              <span>${content}</span>
+            </div>
+            <div class="text-xs text-gray-500 mt-1">${timestamp}</div>
+          `;
+        } else {
+          article.innerHTML = `
+            <div class="ai-message-content"></div>
+            <div class="text-xs text-gray-500 mt-1">${timestamp}</div>
+          `;
+
+          const contentDiv = article.querySelector(".ai-message-content");
+          // Parse markdown for AI messages only
+          if (sender === "ai") {
+            contentDiv.innerHTML = marked.parse(content);
+            applyCodeToggle(contentDiv);
+          } else {
+            contentDiv.textContent = content;
+          }
+        }
+
+        container.appendChild(article);
+        messagesContainer.insertBefore(container, loadingIndicator);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+
+      // Show full code toggle on code blocks
+      function applyCodeToggle(container) {
+        const pres = container.querySelectorAll("pre");
+        pres.forEach(pre => {
+          if(pre.scrollHeight > 150){
+            pre.classList.add("collapsed");
+            const btn = document.createElement("button");
+            btn.textContent = "Show full code";
+            btn.className = "show-full-btn";
+            btn.setAttribute("aria-expanded", "false");
+            btn.addEventListener("click", () => {
+              if(pre.classList.contains("collapsed")){
+                pre.classList.remove("collapsed");
+                btn.textContent = "Hide full code";
+                btn.setAttribute("aria-expanded", "true");
+              } else {
+                pre.classList.add("collapsed");
+                btn.textContent = "Show full code";
+                btn.setAttribute("aria-expanded", "false");
+              }
+            });
+            pre.appendChild(btn);
+          }
+        });
+      }
+
+      // Send user message & get AI response
+      async function sendMessage() {
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        addMessage("user", message);
+        messageInput.value = "";
+        messageInput.style.height = "auto";
+        loadingIndicator.style.display = "block";
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        try {
+          const response = await fetch("/chat", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              message: message,
+              conversation_id: "{{ current_conversation }}",
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (data.success && data.response) {
+            addMessage("ai", data.response);
+          } else {
+            addMessage("ai", "Ndasaba imbabazi, sinabonye igisubizo cyiza.");
+          }
+        } catch (error) {
+          console.error("Error:", error);
+          addMessage("ai", "Habaye ikosa, ongera ugerageze.");
+        } finally {
+          loadingIndicator.style.display = "none";
+        }
+      }
+
+      // Upload file handler
+      async function uploadFile(file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("conversation_id", "{{ current_conversation }}");
+
+        try {
+          const response = await fetch("/upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (response.ok) {
+            window.location.reload();
+          } else {
+            throw new Error("Upload failed");
+          }
+        } catch (error) {
+          console.error("Upload error:", error);
+          addMessage("ai", "Fayile ntibyashobotse koherezwa. Ongera ugerageze.");
+        }
+      }
+
+      // Render existing AI messages with markdown and code toggles
+      document.querySelectorAll(".message-ai .ai-message-content").forEach((div) => {
+        div.innerHTML = marked.parse(div.textContent);
+        applyCodeToggle(div);
+      });
+
+      // Scroll to bottom on load
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    });
+  </script>
+</body>
+</html>

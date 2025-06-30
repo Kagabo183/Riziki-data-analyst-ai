@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Data Analysis - {{ filename }}</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; background-color: #f8f9fa; }
+        .container { max-width: 1200px; }
+        .card-header { font-weight: bold; }
+        .data-preview, .column-names { margin-bottom: 20px; }
+        .data-preview table { width: 100%; border-collapse: collapse; }
+        .data-preview th, .data-preview td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .ai-chat-box {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background-color: #fff;
+            padding: 15px;
+            height: 400px; /* Fixed height for chat history */
+            overflow-y: auto; /* Scrollable */
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column; /* Messages stack vertically */
+        }
+        .chat-message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 15px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        .chat-message.user {
+            background-color: #dcf8c6; /* Light green */
+            align-self: flex-end; /* Align user messages to the right */
+            text-align: right;
+            margin-left: auto; /* Push to right */
+        }
+        .chat-message.ai {
+            background-color: #e0e0e0; /* Light gray */
+            align-self: flex-start; /* Align AI messages to the left */
+            text-align: left;
+            margin-right: auto; /* Push to left */
+        }
+        .chat-message pre {
+            white-space: pre-wrap; /* Preserve whitespace and wrap long lines */
+            word-break: break-all; /* Break long words */
+            background-color: #f0f0f0;
+            padding: 8px;
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+        .plot-container {
+            width: 100%;
+            height: 500px; /* Fixed height for plots */
+            margin-top: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background-color: #fff;
+            display: none; /* Hidden by default, shown when a plot is available */
+            overflow: hidden; /* Ensure plot doesn't spill */
+        }
+        #loading-spinner {
+            display: none; /* Hidden by default */
+            margin-left: 10px;
+        }
+        #ask-question-form {
+            display: flex;
+            align-items: center;
+        }
+        #prompt-input {
+            flex-grow: 1; /* Allows input to take available space */
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="mb-4">Data Analysis for: {{ filename }}</h2>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">Data Preview</div>
+                    <div class="card-body">
+                        <div class="data-preview">
+                            {{ data_preview|safe }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">Available Columns</div>
+                    <div class="card-body">
+                        <div class="column-names">
+                            {% if column_names %}
+                                <ul>
+                                    {% for col in column_names %}
+                                        <li>{{ col }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                <p>No columns found or data is empty.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Ask the AI</div>
+                    <div class="card-body">
+                        <div id="ai-chat-box" class="ai-chat-box">
+                            {% for chat in chat_history %}
+                                <div class="chat-message {{ chat.sender }}">
+                                    {{ chat.message|safe }}
+                                </div>
+                            {% endfor %}
+                            <script>
+                                var chatBox = document.getElementById("ai-chat-box");
+                                chatBox.scrollTop = chatBox.scrollHeight;
+                            </script>
+                        </div>
+                        
+                        <form id="ask-question-form">
+                            <input type="text" id="prompt-input" class="form-control" placeholder="Type your question here (e.g., 'Summarize the dataset', 'bar chart of Population by Region')">
+                            <button type="submit" class="btn btn-primary">Ask</button>
+                            <div id="loading-spinner" class="spinner-border text-primary" role="status">
+                                <span class="sr-only">Loading...</span>
+                            </div>
+                        </form>
+                        
+                        <div id="ai-response" class="mt-3">
+                            </div>
+                        <div id="plot-output" class="plot-container">
+                            </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script> <script>
+        $(document).ready(function() {
+            var chatBox = $("#ai-chat-box");
+            var plotOutput = $("#plot-output");
+            var loadingSpinner = $("#loading-spinner");
+
+            // Function to add a message to the chat box
+            function addMessageToChat(sender, message) {
+                var messageClass = (sender === 'user') ? 'user' : 'ai';
+                var newMessageHtml = '<div class="chat-message ' + messageClass + '">' + message + '</div>';
+                chatBox.append(newMessageHtml);
+                // Scroll to the bottom
+                chatBox.scrollTop(chatBox[0].scrollHeight);
+            }
+
+            // Initial scroll to bottom (for history loaded from Flask)
+            chatBox.scrollTop(chatBox[0].scrollHeight);
+
+            $('#ask-question-form').submit(function(event) {
+                event.preventDefault(); // Prevent default form submission
+                
+                var prompt = $('#prompt-input').val();
+                if (prompt.trim() === '') {
+                    return; // Don't send empty prompts
+                }
+
+                addMessageToChat('user', prompt); // Add user's message immediately
+                $('#prompt-input').val(''); // Clear input field
+
+                loadingSpinner.show(); // Show spinner
+                plotOutput.hide().empty(); // Hide and clear previous plot
+
+                $.ajax({
+                    url: '/analyze_data',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ prompt: prompt }),
+                    success: function(response) {
+                        loadingSpinner.hide(); // Hide spinner
+
+                        if (response.error) {
+                            addMessageToChat('ai', '❌ Error: ' + response.error);
+                        } else {
+                            // The AI's response text is already included in the chat_history from server
+                            // We just need to ensure the chat history is updated client-side based on the full history sent from server
+                            // To avoid double-adding if the server also echoes the user's message, we can refresh the entire chatbox
+                            // or just append the last AI message if we know what it is.
+                            // For simplicity and robustness, let's clear and re-render history.
+                            chatBox.empty(); // Clear existing messages
+                            response.chat_history.forEach(function(chat) {
+                                addMessageToChat(chat.sender, chat.message);
+                            });
+
+                            if (response.plot_json) {
+                                plotOutput.show();
+                                var plotData = JSON.parse(response.plot_json);
+                                Plotly.newPlot('plot-output', plotData.data, plotData.layout);
+                            } else {
+                                plotOutput.hide().empty();
+                            }
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        loadingSpinner.hide(); // Hide spinner
+                        var errorMessage = "An unknown error occurred.";
+                        try {
+                            var errorJson = JSON.parse(xhr.responseText);
+                            errorMessage = errorJson.error || errorMessage;
+                        } catch (e) {
+                            // If response is not JSON, use generic message
+                        }
+                        addMessageToChat('ai', '❌ Network or Server Error: ' + errorMessage + '. Please check your server console.');
+                        console.error("AJAX Error:", status, error, xhr.responseText);
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
